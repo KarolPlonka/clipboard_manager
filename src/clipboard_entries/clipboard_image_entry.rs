@@ -21,15 +21,16 @@ impl ClipboardImageEntry {
 }
 
 impl ClipboardEntry for ClipboardImageEntry {
-    fn get_entry_row(&self) -> ListBoxRow {
+    fn get_entry_row(&self, width: i32) -> ListBoxRow {
+        let margin = 10;
         let row = ListBoxRow::new();
         
         // Create a horizontal box to contain the image
         let hbox = Box::new(Orientation::Horizontal, 5);
-        hbox.set_margin_start(10);
-        hbox.set_margin_end(10);
-        hbox.set_margin_top(8);
-        hbox.set_margin_bottom(8);
+        hbox.set_margin_start(margin);
+        hbox.set_margin_end(margin);
+        hbox.set_margin_top(margin);
+        hbox.set_margin_bottom(margin);
         
         // Try to load and display the image
         let (image, dimensions) = match Pixbuf::from_file(&self.path) {
@@ -38,8 +39,12 @@ impl ClipboardEntry for ClipboardImageEntry {
                 let orig_width = pixbuf.width();
                 let orig_height = pixbuf.height();
                 
-                // Scale the image to a thumbnail size while preserving aspect ratio
-                let max_size = 128;
+                // Calculate available width for image (accounting for margins and spacing)
+                // Subtract margins (left + right), spacing, and leave some room for info text
+                let available_width = width - (margin * 2) - 5 - 200; // 200px reserved for text info
+                let max_size = available_width.max(64).min(256); // Clamp between 64 and 256 pixels
+                
+                // Scale the image to fit within available width while preserving aspect ratio
                 let width = pixbuf.width();
                 let height = pixbuf.height();
                 
@@ -120,7 +125,48 @@ impl ClipboardEntry for ClipboardImageEntry {
         row.show_all();
         row
     }
-    
+
+    fn get_more_info(&self, width: i32, height: i32) -> gtk::Widget {
+        let margin = 10;
+        // Account for both left/right and top/bottom margins
+        let available_width = width - (margin * 2);
+        let available_height = height - (margin * 2);
+        
+        let image = match Pixbuf::from_file(&self.path) {
+            Ok(pixbuf) => {
+                let original_width = pixbuf.width() as f64;
+                let original_height = pixbuf.height() as f64;
+                
+                // Calculate scale factors for both dimensions
+                let width_scale = available_width as f64 / original_width;
+                let height_scale = available_height as f64 / original_height;
+                
+                // Use the smaller scale factor to ensure image fits in both dimensions
+                let scale = width_scale.min(height_scale);
+                
+                let scaled_width = (original_width * scale) as i32;
+                let scaled_height = (original_height * scale) as i32;
+                
+                let scaled_pixbuf = pixbuf.scale_simple(
+                    scaled_width,
+                    scaled_height,
+                    gtk::gdk_pixbuf::InterpType::Bilinear
+                ).unwrap_or(pixbuf);
+                
+                Image::from_pixbuf(Some(&scaled_pixbuf))
+            }
+            Err(_) => Image::from_icon_name(Some("image-missing"), gtk::IconSize::Dialog),
+        };
+        
+        let container = Box::new(Orientation::Vertical, 0);
+        container.set_margin_top(margin);
+        container.set_margin_bottom(margin);
+        // container.set_margin_start(margin);
+        // container.set_margin_end(margin);
+        container.pack_start(&image, true, true, 0);
+        container.upcast::<gtk::Widget>()
+    }
+
     fn copy_to_clipboard(&self) -> Result<(), io::Error> {
         // Could have different implementation for images
         copy_to_clipboard_by_gpaste_uuid(&self.uuid)
