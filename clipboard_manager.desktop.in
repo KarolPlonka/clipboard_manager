@@ -1,0 +1,19 @@
+[Desktop Entry]
+Name=@RUST_PROJECT_NAME@
+GenericName=GPaste Integration Tool
+Comment=Rust application with GPaste integration for GNOME
+Exec=@CMAKE_INSTALL_PREFIX@/bin/@RUST_BINARY_NAME@
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Utility;
+Icon=edit-paste
+StartupNotify=true
+DBusActivatable=false
+OnlyShowIn=GNOME;
+
+# Optional: Add actions
+Actions=clear-history;
+
+[Desktop Action clear-history]
+Name=Clear GPaste History
+Exec=@CMAKE_INSTALL_PREFIX@/bin/@RUST_BINARY_NAME@ --clear-history

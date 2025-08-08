@@ -1,0 +1,183 @@
+#!/bin/bash
+
+# Keybinding setup script for @RUST_PROJECT_NAME@
+# This script sets up a GNOME keybinding for Ctrl+Alt+V
+
+BINARY_PATH="@CMAKE_INSTALL_PREFIX@/bin/@RUST_BINARY_NAME@"
+APP_NAME="@RUST_PROJECT_NAME@"
+KEYBINDING="<Primary><Alt>v"  # Ctrl+Alt+V
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Check if running on GNOME
+check_gnome() {
+    if ! command -v gsettings &> /dev/null; then
+        print_error "gsettings not found. This script requires GNOME."
+        exit 1
+    fi
+    
+    if [[ "$XDG_CURRENT_DESKTOP" != *"GNOME"* ]] && [[ "$DESKTOP_SESSION" != *"gnome"* ]]; then
+        print_warning "GNOME desktop environment not detected."
+        print_warning "Current desktop: $XDG_CURRENT_DESKTOP"
+        print_warning "The keybinding may not work correctly."
+    fi
+}
+
+# Find an available custom keybinding slot
+find_available_slot() {
+    local custom_keybindings=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)
+    local slot=0
+    
+    while true; do
+        if [[ ! "$custom_keybindings" =~ "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom$slot/" ]]; then
+            echo $slot
+            return
+        fi
+        ((slot++))
+        if [ $slot -gt 100 ]; then
+            print_error "No available keybinding slots found (checked 0-100)"
+            exit 1
+        fi
+    done
+}
+
+# Check if keybinding already exists
+check_existing_keybinding() {
+    local custom_keybindings=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)
+    
+    # Remove brackets and quotes, split by comma
+    local keybindings_array=($(echo $custom_keybindings | tr -d "[]'" | tr ',' '\n'))
+    
+    for kb_path in "${keybindings_array[@]}"; do
+        kb_path=$(echo $kb_path | xargs) # Trim whitespace
+        if [ -n "$kb_path" ]; then
+            local kb_command=$(gsettings get org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$kb_path command 2>/dev/null || echo "")
+            if [[ "$kb_command" == "'$BINARY_PATH'" ]]; then
+                echo "$kb_path"
+                return
+            fi
+        fi
+    done
+    
+    echo ""
+}
+
+# Remove keybinding
+remove_keybinding() {
+    print_info "Checking for existing keybinding..."
+    
+    local existing_path=$(check_existing_keybinding)
+    if [ -z "$existing_path" ]; then
+        print_info "No existing keybinding found for $APP_NAME"
+        return
+    fi
+    
+    print_info "Found existing keybinding at: $existing_path"
+    
+    # Get current custom keybindings
+    local custom_keybindings=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)
+    
+    # Remove the keybinding path from the array - use | as delimiter to avoid conflicts with / in path
+    local new_keybindings=$(echo $custom_keybindings | sed "s|'$existing_path',\s*||g" | sed "s|,\s*'$existing_path'||g" | sed "s|'$existing_path'||g")
+    
+    # Clean up empty array
+    new_keybindings=$(echo $new_keybindings | sed 's/\[\s*,/\[/g' | sed 's/,\s*\]/\]/g' | sed 's/\[\s*\]/\[\]/g')
+    
+    # Update the custom keybindings list
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_keybindings"
+    
+    print_info "Keybinding removed successfully"
+}
+
+# Add keybinding
+add_keybinding() {
+    # Check if binary exists
+    if [ ! -f "$BINARY_PATH" ]; then
+        print_error "Binary not found at: $BINARY_PATH"
+        print_error "Please make sure the application is installed first."
+        exit 1
+    fi
+    
+    # Check for existing keybinding
+    local existing_path=$(check_existing_keybinding)
+    if [ -n "$existing_path" ]; then
+        print_warning "Keybinding already exists for $APP_NAME at: $existing_path"
+        print_info "Updating existing keybinding..."
+        
+        # Update the existing keybinding
+        gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$existing_path name "$APP_NAME"
+        gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$existing_path command "$BINARY_PATH"
+        gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$existing_path binding "$KEYBINDING"
+        
+        print_info "Keybinding updated successfully!"
+        return
+    fi
+    
+    # Find available slot
+    print_info "Finding available keybinding slot..."
+    local slot=$(find_available_slot)
+    local path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom$slot/"
+    
+    print_info "Using slot: custom$slot"
+    
+    # Get current custom keybindings
+    local custom_keybindings=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)
+    
+    # Add new keybinding to the list
+    if [ "$custom_keybindings" == "[]" ] || [ "$custom_keybindings" == "@as []" ]; then
+        new_keybindings="['$path']"
+    else
+        # Remove the closing bracket and add the new path - use | as delimiter to avoid conflicts with / in path
+        new_keybindings=$(echo $custom_keybindings | sed "s|\]$|, '$path']|")
+    fi
+    
+    # Update the custom keybindings list
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new_keybindings"
+    
+    # Set the keybinding properties
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$path name "$APP_NAME"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$path command "$BINARY_PATH"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$path binding "$KEYBINDING"
+    
+    print_info "Keybinding added successfully!"
+}
+
+# Main function
+main() {
+    print_info "GNOME Keybinding Setup for $APP_NAME"
+    print_info "Binary path: $BINARY_PATH"
+    
+    check_gnome
+    
+    if [ "$1" == "--remove" ]; then
+        remove_keybinding
+    else
+        add_keybinding
+        print_info ""
+        print_info "Keybinding configured:"
+        print_info "  Press Ctrl+Alt+V to launch $APP_NAME"
+        print_info ""
+        print_info "You can modify this keybinding in GNOME Settings > Keyboard > Keyboard Shortcuts"
+        print_info "Look for '$APP_NAME' in the custom shortcuts section"
+    fi
+}
+
+# Run main function
+main "$@"
