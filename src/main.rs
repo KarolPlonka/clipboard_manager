@@ -1,5 +1,5 @@
 use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow, ListBox, ScrolledWindow, Paned, Orientation};
+use gtk::{Application, ApplicationWindow, ListBox, ScrolledWindow, Box, Orientation};
 use gtk::gdk;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -36,25 +36,26 @@ fn build_ui(app: &Application) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Clipboard Manager")
-        .default_width(entries_width + info_box_width)
+        .default_width(entries_width) // Start with just the list width
         .default_height(app_height)
         .decorated(false)
         .build();
 
-    // Create paned container for split view
-    let paned = Paned::new(Orientation::Horizontal);
-    paned.set_position(entries_width); // Set initial split position
+    // Create horizontal box to hold both sides
+    let main_box = Box::new(Orientation::Horizontal, 0);
 
     // Create scrolled window for list
     let list_scrolled_window = ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .min_content_width(entries_width)
         .build();
 
-    // Create scrolled window for detail view
+    // Create scrolled window for detail view (but don't add it yet)
     let detail_scrolled_window = ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Automatic)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .min_content_width(info_box_width)
         .build();
 
     // Create list box
@@ -72,35 +73,25 @@ fn build_ui(app: &Application) {
         list_box.add(&empty_row);
     } else {
         for entry in entries.iter() {
-            let row = entry.get_entry_row(entries_width); // Use a fixed width for the row
+            let row = entry.get_entry_row(entries_width);
             list_box.add(&row);
         }
     }
 
-    // Select first row by default and show its detail
+    // Select first row by default (but don't show details)
     if !entries.is_empty() {
         list_box.select_row(list_box.row_at_index(0).as_ref());
-        
-        // Show first entry's detail
-        if let Some(entry) = entries.get(0) {
-            // Clear previous content
-            for child in detail_container.children() {
-                detail_container.remove(&child);
-            }
-            // Add new content
-            let detail_widget = entry.get_more_info(info_box_width, app_height);
-            detail_container.add(&detail_widget);
-            detail_container.show_all();
-        }
     }
 
     list_scrolled_window.add(&list_box);
     
-    // Add both scrolled windows to paned
-    paned.pack1(&list_scrolled_window, true, false);
-    paned.pack2(&detail_scrolled_window, true, false);
+    // Initially only pack the list scrolled window
+    main_box.pack_start(&list_scrolled_window, false, false, 0);
     
-    window.add(&paned);
+    window.add(&main_box);
+
+    // Track whether details are visible
+    let details_visible = Rc::new(RefCell::new(false));
 
     // Set up keyboard event handling
     let current_index = Rc::new(RefCell::new(0));
@@ -111,30 +102,40 @@ fn build_ui(app: &Application) {
     let window_clone = window.clone();
     let entries_clone = entries_rc.clone();
 
-    // Handle list selection changes
+    // Handle list selection changes (but only update detail view if visible)
     let entries_for_selection = entries_rc.clone();
     let detail_container_for_selection = detail_container.clone();
+    let details_visible_for_selection = details_visible.clone();
     
-    list_box.connect_row_selected(move |list_box, row| {
-        if let Some(row) = row {
-            let index = row.index() as usize;
-            
-            // Update detail view
-            if let Some(entry) = entries_for_selection.get(index) {
-                // Clear previous content
-                for child in detail_container_for_selection.children() {
-                    detail_container_for_selection.remove(&child);
+    list_box.connect_row_selected(move |_, row| {
+        // Only update detail view if it's visible
+        if *details_visible_for_selection.borrow() {
+            if let Some(row) = row {
+                let index = row.index() as usize;
+                
+                if let Some(entry) = entries_for_selection.get(index) {
+                    // Clear previous content
+                    for child in detail_container_for_selection.children() {
+                        detail_container_for_selection.remove(&child);
+                    }
+                    // Add new content
+                    let detail_widget = entry.get_more_info(info_box_width, app_height);
+                    detail_container_for_selection.add(&detail_widget);
+                    detail_container_for_selection.show_all();
                 }
-                // Add new content
-                let detail_widget = entry.get_more_info(entries_width, app_height);
-                detail_container_for_selection.add(&detail_widget);
-                detail_container_for_selection.show_all();
             }
         }
     });
 
     // Clone for keyboard handler
     let current_index_clone = current_index.clone();
+    let details_visible_clone = details_visible.clone();
+    let main_box_clone = main_box.clone();
+    let detail_scrolled_window_clone = detail_scrolled_window.clone();
+    let entries_for_toggle = entries_rc.clone();
+    let detail_container_for_toggle = detail_container.clone();
+    let list_box_for_toggle = list_box.clone();
+    let window_for_toggle = window.clone();
     
     window.connect_key_press_event(move |_, event| {
         let keyval = event.keyval();
@@ -169,6 +170,44 @@ fn build_ui(app: &Application) {
                         row.grab_focus();
                     }
                 }
+                Inhibit(true)
+            }
+            "i" => {
+                // Toggle detail view
+                let mut visible = details_visible_clone.borrow_mut();
+                *visible = !*visible;
+                
+                if *visible {
+                    // Show detail view
+                    main_box_clone.pack_start(&detail_scrolled_window_clone, true, true, 0);
+                    
+                    // Update window width to accommodate both panels
+                    window_for_toggle.resize(entries_width + info_box_width, app_height);
+                    
+                    // Update detail content for currently selected row
+                    if let Some(selected_row) = list_box_for_toggle.selected_row() {
+                        let index = selected_row.index() as usize;
+                        if let Some(entry) = entries_for_toggle.get(index) {
+                            // Clear previous content
+                            for child in detail_container_for_toggle.children() {
+                                detail_container_for_toggle.remove(&child);
+                            }
+                            // Add new content
+                            let detail_widget = entry.get_more_info(info_box_width, app_height);
+                            detail_container_for_toggle.add(&detail_widget);
+                            detail_container_for_toggle.show_all();
+                        }
+                    }
+                    
+                    main_box_clone.show_all();
+                } else {
+                    // Hide detail view
+                    main_box_clone.remove(&detail_scrolled_window_clone);
+                    
+                    // Resize window back to list-only width
+                    window_for_toggle.resize(entries_width, app_height);
+                }
+                
                 Inhibit(true)
             }
             "Return" | "y" => {

@@ -64,7 +64,7 @@ impl ClipboardEntry for ClipboardTextEntry {
         copy_to_clipboard_by_gpaste_uuid(&self.uuid)
     }
 
-    fn get_more_info(&self, width: i32, height: i32) -> Widget {
+    fn get_more_info(&self, width: i32, _height: i32) -> Widget {
         let label = Label::new(Some(&self.full_content));
         // let label = Label::new(Some("test"));
         // println!("Hello, world!");
