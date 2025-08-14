@@ -3,6 +3,7 @@ use gtk::prelude::*;
 use gtk::gdk_pixbuf::Pixbuf;
 use super::clipboard_entry::ClipboardEntry;
 use crate::copy_to_clipboard_by_gpaste_uuid;
+use crate::open_in_external_app;
 use std::io;
 use std::path::Path;
 use std::fs;
@@ -161,14 +162,16 @@ impl ClipboardEntry for ClipboardImageEntry {
         let container = Box::new(Orientation::Vertical, 0);
         container.set_margin_top(margin);
         container.set_margin_bottom(margin);
-        // container.set_margin_start(margin);
-        // container.set_margin_end(margin);
         container.pack_start(&image, true, true, 0);
         container.upcast::<gtk::Widget>()
     }
 
     fn copy_to_clipboard(&self) -> Result<(), io::Error> {
-        // Could have different implementation for images
         copy_to_clipboard_by_gpaste_uuid(&self.uuid)
+    }
+
+
+    fn open_in_external_app(&self) -> Result<(), io::Error> {
+        open_in_external_app(&self.path)
     }
 }

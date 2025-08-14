@@ -1,9 +1,11 @@
 use gtk::prelude::*;
 use gtk::{ApplicationWindow, ListBox, Box, ScrolledWindow, gdk};
 use std::rc::Rc;
+// use clipboard_manager::clipboard_entries::clipboard_entry::ClipboardEntry;
 
 use crate::ui::AppState;
 use crate::constants::{ENTRIES_WIDTH, INFO_BOX_WIDTH, APP_HEIGHT};
+use crate::ui::populate_list_view;
 
 pub fn setup_keyboard_handler(
     window: &ApplicationWindow,
@@ -30,7 +32,7 @@ pub fn setup_keyboard_handler(
         }
 
         match keyname.as_str() {
-            "j" => handle_move_down(&list_box_clone, &app_state),
+            "j" => handle_move_down(&list_box_clone, &app_state, &window_clone),
             "k" => handle_move_up(&list_box_clone, &app_state),
             "i" => handle_toggle_detail(
                 &window_clone,
@@ -40,6 +42,8 @@ pub fn setup_keyboard_handler(
                 &list_box_clone,
                 &app_state
             ),
+            "e" | "o" => handle_open_in_external_app(&list_box_clone, &app_state),
+            // "a" => load_all_entries(&list_box_clone, &app_state, &window_clone),
             "Return" | "y" => handle_copy_and_close(&window_clone, &list_box_clone, &app_state),
             "Escape" | "q" => {
                 window_clone.close();
@@ -50,9 +54,23 @@ pub fn setup_keyboard_handler(
     });
 }
 
-fn handle_move_down(list_box: &ListBox, app_state: &AppState) -> Inhibit {
+fn load_all_entries(list_box: &ListBox, app_state: &AppState, window: &ApplicationWindow) {
+    let entries = populate_list_view(list_box, 100, ENTRIES_WIDTH);
+
+    app_state.entries.replace(entries);
+
+    window.show_all();
+}
+
+fn handle_move_down(list_box: &ListBox, app_state: &AppState, window: &ApplicationWindow) -> Inhibit {
     let mut current_index = app_state.current_index.borrow_mut();
-    let max_index = app_state.max_index();
+    let mut max_index = app_state.max_index();
+
+    if *current_index == max_index {
+        load_all_entries(list_box, app_state, window);
+    }
+
+    max_index = app_state.max_index();
     
     if *current_index < max_index {
         *current_index += 1;
@@ -98,7 +116,7 @@ fn handle_toggle_detail(
         // Update detail content for currently selected row
         if let Some(selected_row) = list_box.selected_row() {
             let index = selected_row.index() as usize;
-            if let Some(entry) = app_state.entries.get(index) {
+            if let Some(entry) = app_state.entries.borrow().get(index) {
                 // Clear previous content
                 for child in detail_container.children() {
                     detail_container.remove(&child);
@@ -130,12 +148,28 @@ fn handle_copy_and_close(
     // Get the currently selected row
     if let Some(selected_row) = list_box.selected_row() {
         let index = selected_row.index() as usize;
-        if let Some(entry) = app_state.entries.get(index) {
+        if let Some(entry) = app_state.entries.borrow().get(index) {
             if let Err(e) = entry.copy_to_clipboard() {
                 eprintln!("Error copying to clipboard: {}", e);
             }
         }
     }
     window.close();
+    Inhibit(true)
+}
+
+fn handle_open_in_external_app(
+    list_box: &ListBox,
+    app_state: &AppState,
+) -> Inhibit {
+    // Get the currently selected row
+    if let Some(selected_row) = list_box.selected_row() {
+        let index = selected_row.index() as usize;
+        if let Some(entry) = app_state.entries.borrow().get(index) {
+            if let Err(e) = entry.open_in_external_app() {
+                eprintln!("Error opening in external app: {}", e);
+            }
+        }
+    }
     Inhibit(true)
 }

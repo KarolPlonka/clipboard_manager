@@ -1,9 +1,8 @@
 use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow, ListBox, ScrolledWindow, Box, Orientation};
+use gtk::{Application, ApplicationWindow, ListBox, Box, Orientation};
 use std::rc::Rc;
 use std::cell::RefCell;
 
-use crate::get_clipboard_entries::get_clipboard_entries;
 use crate::constants::*;
 use crate::keyboard_handler::setup_keyboard_handler;
 
@@ -13,18 +12,11 @@ mod app_state;
 
 use list_view::create_list_view;
 use detail_view::create_detail_view;
+
 pub use app_state::AppState;
+pub use list_view::populate_list_view;
 
 pub fn build_ui(app: &Application) {
-    // Fetch clipboard entries
-    let entries = match get_clipboard_entries(MAX_ENTRIES) {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("Error fetching clipboard entries: {}", e);
-            vec![]
-        }
-    };
-
     // Create main window
     let window = ApplicationWindow::builder()
         .application(app)
@@ -38,7 +30,7 @@ pub fn build_ui(app: &Application) {
     let main_box = Box::new(Orientation::Horizontal, 0);
 
     // Create list view
-    let (list_scrolled_window, list_box) = create_list_view(&entries, ENTRIES_WIDTH);
+    let (list_scrolled_window, list_box, entries) = create_list_view(INITIAL_ENTRIES, ENTRIES_WIDTH);
 
     // Create detail view
     let (detail_scrolled_window, detail_container) = create_detail_view(INFO_BOX_WIDTH);
@@ -49,7 +41,7 @@ pub fn build_ui(app: &Application) {
 
     // Create app state
     let app_state = Rc::new(AppState {
-        entries: Rc::new(entries),
+        entries: RefCell::new(entries),
         details_visible: RefCell::new(false),
         current_index: RefCell::new(0),
     });
@@ -87,7 +79,7 @@ fn setup_list_selection_handler(
             if let Some(row) = row {
                 let index = row.index() as usize;
                 
-                if let Some(entry) = app_state.entries.get(index) {
+                if let Some(entry) = app_state.entries.borrow().get(index) {
                     // Clear previous content
                     for child in detail_container_clone.children() {
                         detail_container_clone.remove(&child);

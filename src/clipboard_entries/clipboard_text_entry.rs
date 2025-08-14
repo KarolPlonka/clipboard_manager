@@ -1,6 +1,8 @@
 use gtk::{ListBoxRow, Label, Widget};
 use gtk::prelude::*;
 use super::clipboard_entry::ClipboardEntry;
+use crate::open_in_external_app;
+use crate::save_to_tmp_file;
 use crate::copy_to_clipboard_by_gpaste_uuid;
 use std::io;
 
@@ -29,13 +31,6 @@ impl ClipboardTextEntry {
                 break;
             }
             result.push(line.to_string());
-            
-            // if line.len() > 20 {
-            //     let truncated = format!("{}...", &line[..17]); // 47 chars + 3 dots = 50
-            //     result.push(truncated);
-            // } else {
-            //     result.push(line.to_string());
-            // }
         }
         
         return result.join("\n");
@@ -66,18 +61,18 @@ impl ClipboardEntry for ClipboardTextEntry {
 
     fn get_more_info(&self, width: i32, _height: i32) -> Widget {
         let label = Label::new(Some(&self.full_content));
-        // let label = Label::new(Some("test"));
-        // println!("Hello, world!");
-
         label.set_xalign(0.0);
         label.set_margin_start(10);
         label.set_margin_end(10);
         label.set_margin_top(8);
         label.set_margin_bottom(8);
         label.set_width_chars(width);
-
-        // label.set_height_chars(height);
         return label.upcast::<Widget>();
+    }
+
+    fn open_in_external_app(&self) -> Result<(), io::Error> {
+        let file_path = save_to_tmp_file(&self.full_content)?;
+        open_in_external_app(&file_path)
     }
 }
 
