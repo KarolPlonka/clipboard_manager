@@ -11,7 +11,6 @@ use std::fs;
 #[derive(Debug, Clone)]
 pub struct ClipboardImageEntry {
     path: String,
-    // thumbnail_path: String,
     uuid: String,
 }
 
@@ -19,10 +18,11 @@ impl ClipboardImageEntry {
     pub fn new(path: String, uuid: String) -> Self {
         Self { path, uuid }
     }
+
 }
 
 impl ClipboardEntry for ClipboardImageEntry {
-    fn get_entry_row(&self, width: i32) -> ListBoxRow {
+    fn create_entry_row(&self, width: i32) -> ListBoxRow {
         let margin = 10;
         let row = ListBoxRow::new();
         

@@ -16,7 +16,7 @@ pub struct ClipboardTextEntry {
 impl ClipboardTextEntry {
     pub fn new(full_content: String, uuid: String) -> Self {
         let shorten_content = Self::create_shorten_content(&full_content);
-        return Self { full_content, shorten_content, uuid };
+        return Self{ full_content, shorten_content, uuid};
     }
 
     fn create_shorten_content(content: &str) -> String {
@@ -39,7 +39,7 @@ impl ClipboardTextEntry {
 
 // Implement the trait for ClipboardTextEntry
 impl ClipboardEntry for ClipboardTextEntry {
-    fn get_entry_row(&self, width: i32) -> ListBoxRow {
+    fn create_entry_row(&self, width: i32) -> ListBoxRow {
         let margin = 10; // Adjust margin as needed
         let row = ListBoxRow::new();
         let label = Label::new(Some(&self.shorten_content));
@@ -53,6 +53,10 @@ impl ClipboardEntry for ClipboardTextEntry {
         row.add(&label);
         row.set_size_request(width, -1);
         return row;
+    }
+
+    fn contains_text(&self, search_text: String) -> bool {
+        return self.full_content.contains(&search_text)
     }
 
     fn copy_to_clipboard(&self) -> Result<(), io::Error> {
@@ -74,5 +78,7 @@ impl ClipboardEntry for ClipboardTextEntry {
         let file_path = save_to_tmp_file(&self.full_content)?;
         open_in_external_app(&file_path)
     }
+
 }
+
 
