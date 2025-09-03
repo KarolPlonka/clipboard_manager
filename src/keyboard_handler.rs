@@ -1,13 +1,14 @@
 use gtk::prelude::*;
-use gtk::{ApplicationWindow, ListBox, Box as GTKBox, Entry, ScrolledWindow, gdk};
+use gtk::{ApplicationWindow, ListBox, Box as GTKBox, SearchEntry, ScrolledWindow, gdk, ListBoxRow};
 use std::rc::Rc;
+use gtk::glib::idle_add_local;
 use clipboard_manager::clipboard_entries::clipboard_entry::ClipboardEntry;
 // use clipboard_manager::clipboard_entries::clipboard_text_entry::ClipboardTextEntry;
 
 use crate::get_clipboard_entries::get_clipboard_entries;
 use crate::ui::{AppState, DetailsVisibility};
-use crate::constants::{ENTRIES_WIDTH, INFO_BOX_WIDTH, APP_HEIGHT, INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT};
-use crate::ui::populate_list_view;
+use crate::constants::{ENTRIES_WIDTH, INFO_BOX_WIDTH, APP_HEIGHT, INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT, MAX_ENTRIES, INITIAL_ENTRIES};
+use crate::ui::append_to_list_view;
 use crate::ui::show_error;
 
 
@@ -18,7 +19,6 @@ fn get_current_entry<'a>(
     let selected_row = list_box.selected_row()?;
     let map = app_state.row_to_entry_map.borrow();
     
-    // Check if the entry exists
     if map.contains_key(&selected_row) {
         Some(std::cell::Ref::map(map, |m| m.get(&selected_row).unwrap()))
     } else {
@@ -26,11 +26,40 @@ fn get_current_entry<'a>(
     }
 }
 
+
+fn load_all_entries_if_reached_end(
+    list_box: &ListBox,
+    app_state: &AppState,
+    window: &ApplicationWindow,
+) {
+    if *app_state.all_entries_loaded.borrow() {
+        return;
+    }
+
+    let Some(selected_row) = list_box.selected_row() else {
+        return;
+    };
+
+    let index = selected_row.index();
+
+    if index != list_box.children().len() as i32 - 1 {
+        return;
+    }
+
+    load_all_entries(list_box, app_state, window);
+
+    if let Some(row) = list_box.row_at_index(index) {
+        list_box.select_row(Some(&row));
+        row.grab_focus();
+    }
+}
+
+
 pub fn setup_keyboard_handler(
     window: &ApplicationWindow,
     list_box: &ListBox,
     main_box: &GTKBox,
-    search_entry: &Entry,
+    search_entry: &SearchEntry,
     detail_scrolled_window: &ScrolledWindow,
     detail_container: &GTKBox,
     app_state: Rc<AppState>,
@@ -41,6 +70,14 @@ pub fn setup_keyboard_handler(
     let detail_scrolled_window_clone = detail_scrolled_window.clone();
     let detail_container_clone = detail_container.clone();
     let search_entry_clone = search_entry.clone();
+
+    let window_for_move = window.clone();
+    let list_box_for_move = list_box.clone();
+    let app_state_for_move = app_state.clone();
+
+    list_box.connect_move_cursor(move |_, _step, _count| {
+        load_all_entries_if_reached_end(&list_box_for_move, &app_state_for_move, &window_for_move);
+    });
     
     main_box.connect_key_press_event(move |_, event| {
         let keyval = event.keyval();
@@ -53,9 +90,13 @@ pub fn setup_keyboard_handler(
         }
 
         match keyname.as_str() {
-            "j" => handle_move_down(&list_box_clone, &app_state, &window_clone),
-            "k" => handle_move_up(&list_box_clone),
-            "i" => handle_toggle_detail(
+            "j" => {
+                load_all_entries_if_reached_end(&list_box_clone, &app_state, &window_clone);
+                // return Inhibit(true);
+                return move_cursor(&list_box_clone, 1);
+            }
+            "k" => move_cursor(&list_box_clone, -1),
+            "i" => toggle_detail(
                 &window_clone,
                 &main_box_clone,
                 &detail_scrolled_window_clone,
@@ -64,7 +105,23 @@ pub fn setup_keyboard_handler(
                 &app_state
             ),
             "e" | "o" => handle_open_in_external_app(&list_box_clone, &app_state),
-            // "s" => enter_search_mode(&search_entry_clone, &list_box_clone, &app_state),
+            "s" => {
+                load_all_entries(&list_box_clone, &app_state, &window_clone);
+                show_big_detail(
+                    &main_box_clone,
+                    &detail_scrolled_window_clone,
+                    &detail_container_clone,
+                    &list_box_clone,
+                    &app_state
+                );
+                enter_search_mode(
+                    &search_entry_clone,
+                    &list_box_clone,
+                    &app_state,
+                    &window_clone,
+                );
+                Inhibit(true)
+            },
             "Return" | "y" => handle_copy_and_close(&window_clone, &list_box_clone, &app_state),
             "Escape" | "q" => {
                 window_clone.close();
@@ -75,8 +132,13 @@ pub fn setup_keyboard_handler(
     });
 }
 
+
 fn load_all_entries(list_box: &ListBox, app_state: &AppState, window: &ApplicationWindow) {
-    let entries = match get_clipboard_entries(100) {
+    if *app_state.all_entries_loaded.borrow() {
+        return;
+    }
+
+    let entries = match get_clipboard_entries(MAX_ENTRIES) {
         Ok(entries) if !entries.is_empty() => entries,
         Ok(_) => {
             show_error(window, "No more clipboard entries available.");
@@ -88,46 +150,119 @@ fn load_all_entries(list_box: &ListBox, app_state: &AppState, window: &Applicati
         }
     };
 
-    let row_to_entry_map = populate_list_view(list_box, entries, ENTRIES_WIDTH);
+    let new_entries = entries.into_iter().skip(INITIAL_ENTRIES).collect();
 
-    app_state.row_to_entry_map.replace(row_to_entry_map);
+    let (rows, row_to_entry_map) = append_to_list_view(list_box, new_entries, ENTRIES_WIDTH);
+
+    app_state.rows.borrow_mut().extend(rows);
+    app_state.row_to_entry_map.borrow_mut().extend(row_to_entry_map);
 
     app_state.all_entries_loaded.replace(true);
 
     list_box.show_all();
 }
 
-fn handle_move_down(list_box: &ListBox, app_state: &AppState, window: &ApplicationWindow) -> Inhibit {
-    if let Some(selected_row) = list_box.selected_row() {
-        let next_index = selected_row.index() + 1;
-        let mut next_row = list_box.row_at_index(next_index);
-        
-        if next_row.is_none() && !(*app_state.all_entries_loaded.borrow()) {
-            load_all_entries(list_box, app_state, window);
-            next_row = list_box.row_at_index(next_index);
-        }
-        
-        if let Some(next_row) = next_row {
-            list_box.select_row(Some(&next_row));
-            next_row.grab_focus();
-        }
+
+fn move_cursor(list_box: &ListBox, offset: i32) -> Inhibit {
+    let target_index = if let Some(selected_row) = list_box.selected_row() {
+        selected_row.index() + offset
+    } else {
+        0
+    };
+
+    if target_index < 0 || target_index >= list_box.children().len() as i32 {
+        return Inhibit(true);
+    }
+
+    if let Some(target_row) = list_box.row_at_index(target_index) {
+        list_box.select_row(Some(&target_row));
+        let target_row_clone = target_row.clone();
+        idle_add_local(move || {
+            target_row_clone.grab_focus();
+            Continue(false) // Don't repeat
+        });
     }
     
     Inhibit(true)
 }
 
-fn handle_move_up(list_box: &ListBox) -> Inhibit {
-    if let Some(selected_row) = list_box.selected_row() {
-        if let Some(next_row) = list_box.row_at_index(selected_row.index() - 1) {
-            list_box.select_row(Some(&next_row));
-            next_row.grab_focus();
-        }
-    }
 
+
+
+fn hide_detail(
+    window: &ApplicationWindow,
+    main_box: &GTKBox,
+    detail_scrolled_window: &ScrolledWindow,
+    app_state: &AppState,
+) -> Inhibit {
+    main_box.remove(detail_scrolled_window);
+    window.resize(ENTRIES_WIDTH, APP_HEIGHT);
+    *app_state.details_visibility.borrow_mut() = DetailsVisibility::Hidden;
     Inhibit(true)
 }
 
-fn handle_toggle_detail(
+
+fn show_normal_detail(
+    main_box: &GTKBox,
+    detail_scrolled_window: &ScrolledWindow,
+    detail_container: &GTKBox,
+    list_box: &ListBox,
+    app_state: &AppState,
+) -> Inhibit {
+    *app_state.details_visibility.borrow_mut() = DetailsVisibility::Normal;
+    
+    if detail_scrolled_window.parent().is_none() {
+        detail_scrolled_window.set_size_request(INFO_BOX_WIDTH, APP_HEIGHT);
+        main_box.pack_start(detail_scrolled_window, true, true, 0);
+    } else {
+        detail_scrolled_window.set_size_request(INFO_BOX_WIDTH, APP_HEIGHT);
+    }
+    
+    if let Some(entry) = get_current_entry(list_box, app_state) {
+        for child in detail_container.children() {
+            detail_container.remove(&child);
+        }
+        let detail_widget = entry.get_more_info(INFO_BOX_WIDTH, APP_HEIGHT, app_state.search_query.borrow().clone());
+        detail_container.add(&detail_widget);
+        detail_container.show_all();
+    }
+    
+    detail_scrolled_window.show_all();
+    Inhibit(true)
+}
+
+
+fn show_big_detail(
+    main_box: &GTKBox,
+    detail_scrolled_window: &ScrolledWindow,
+    detail_container: &GTKBox,
+    list_box: &ListBox,
+    app_state: &AppState,
+) -> Inhibit {
+    *app_state.details_visibility.borrow_mut() = DetailsVisibility::Big;
+    
+    if detail_scrolled_window.parent().is_none() {
+        detail_scrolled_window.set_size_request(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT);
+        main_box.pack_start(detail_scrolled_window, true, true, 0);
+    } else {
+        detail_scrolled_window.set_size_request(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT);
+    }
+    
+    if let Some(entry) = get_current_entry(list_box, app_state) {
+        for child in detail_container.children() {
+            detail_container.remove(&child);
+        }
+        let detail_widget = entry.get_more_info(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT, app_state.search_query.borrow().clone());
+        detail_container.add(&detail_widget);
+        detail_container.show_all();
+    }
+    
+    detail_scrolled_window.show_all();
+    Inhibit(true)
+}
+
+
+fn toggle_detail(
     window: &ApplicationWindow,
     main_box: &GTKBox,
     detail_scrolled_window: &ScrolledWindow,
@@ -135,54 +270,26 @@ fn handle_toggle_detail(
     list_box: &ListBox,
     app_state: &AppState,
 ) -> Inhibit {
-    let mut details_visibility = app_state.details_visibility.borrow_mut();
-    match *details_visibility {
-        DetailsVisibility::Hidden => {
-            *details_visibility = DetailsVisibility::Normal;
+    // Determine the next state
+    let next_visibility = {
+        let current = app_state.details_visibility.borrow();
+        match *current {
+            DetailsVisibility::Hidden => DetailsVisibility::Normal,
+            DetailsVisibility::Normal => DetailsVisibility::Big,
+            DetailsVisibility::Big => DetailsVisibility::Hidden,
         }
-        DetailsVisibility::Normal => {
-            *details_visibility = DetailsVisibility::Big;
-        }
-        DetailsVisibility::Big => {
-            *details_visibility = DetailsVisibility::Hidden;
-        }
-    }
+    }; // The borrow is dropped here
     
-    if *details_visibility != DetailsVisibility::Hidden {
-        if detail_scrolled_window.parent().is_none() {
-            if *details_visibility == DetailsVisibility::Big {
-                detail_scrolled_window.set_size_request(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT);
-            } else {
-                detail_scrolled_window.set_size_request(INFO_BOX_WIDTH, APP_HEIGHT);
-            }
-            main_box.pack_start(detail_scrolled_window, true, true, 0);
-        } else {
-            if *details_visibility == DetailsVisibility::Big {
-                detail_scrolled_window.set_size_request(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT);
-            } else {
-                detail_scrolled_window.set_size_request(INFO_BOX_WIDTH, APP_HEIGHT);
-            }
-        }
-        
-        if let Some(entry) = get_current_entry(list_box, app_state) {
-            for child in detail_container.children() {
-                detail_container.remove(&child);
-            }
-            let detail_widget = {
-                if *details_visibility == DetailsVisibility::Big {
-                    entry.get_more_info(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT)
-                } else {
-                    entry.get_more_info(INFO_BOX_WIDTH, APP_HEIGHT)
-                }
-            };
-            detail_container.add(&detail_widget);
-            detail_container.show_all();
-        }
-        
-        main_box.show_all();
-    } else {
-        main_box.remove(detail_scrolled_window);
-        window.resize(ENTRIES_WIDTH, APP_HEIGHT);
+    match next_visibility {
+        DetailsVisibility::Hidden => {
+            hide_detail(window, main_box, detail_scrolled_window, app_state);
+        },
+        DetailsVisibility::Normal => {
+            show_normal_detail(main_box, detail_scrolled_window, detail_container, list_box, app_state);
+        },
+        DetailsVisibility::Big => {
+            show_big_detail(main_box, detail_scrolled_window, detail_container, list_box, app_state);
+        },
     }
     
     Inhibit(true)
@@ -216,85 +323,201 @@ fn handle_open_in_external_app(
     Inhibit(true)
 }
 
-// fn enter_search_mode(
-//     search_entry: &Entry,
-//     list_box: &ListBox,
-//     app_state: &Rc<AppState>,
-// ) -> Inhibit {
-//     search_entry.grab_focus();
-//
-//     let list_box_clone = list_box.clone();
-//     let current_index = app_state.current_index.borrow().clone();
-//     let search_entry_clone = search_entry.clone();
-//     let app_state_clone = app_state.clone();
-//
-//     let list_box_for_changed = list_box.clone();
-//     let app_state_for_changed = app_state.clone();
-//     search_entry.connect_changed(move |entry| {
-//         let search_text = entry.text();
-//         let search_str = search_text.as_str();
-//         let entries = app_state_for_changed.entries.borrow();
-//         
-//         for entry in entries.iter() {
-//             if search_str.is_empty() || entry.contains_text(search_str.to_string()) {
-//                 entry.get_entry_row().show();
-//             } else {
-//                 entry.get_entry_row().hide();
-//             }
-//         }
-//         
-//         for i in 0..entries.len() {
-//             if let Some(row) = list_box_for_changed.row_at_index(i as i32) {
-//                 if row.is_visible() {
-//                     list_box_for_changed.select_row(Some(&row));
-//                     break;
-//                 }
-//             }
-//         }
-//     });
-//
-//     search_entry.connect_key_press_event(move |_, event| {
-//         let keyval = event.keyval();
-//         let keyname = keyval.name().unwrap_or_else(|| gtk::glib::GString::from(""));
-//         let state = event.state();
-//
-//         if state.contains(gdk::ModifierType::CONTROL_MASK) && keyname == "c" {
-//             search_entry_clone.set_text("");
-//             if let Some(row) = list_box_clone.row_at_index(current_index as i32) {
-//                 list_box_clone.select_row(Some(&row));
-//                 row.grab_focus();
-//             }
-//             return Inhibit(true);
-//         }
-//
-//         match keyname.as_str() {
-//             "Return" => {
-//                 if let Some(row) = list_box_clone.row_at_index(current_index as i32) {
-//                     list_box_clone.select_row(Some(&row));
-//                     row.grab_focus();
-//                 }
-//                 println!("Search for: {}", search_entry_clone.text().as_str());
-//                 Inhibit(true)
-//             }
-//             "Escape" => {
-//                 search_entry_clone.set_text("");
-//                 // Reset visibility of all entries
-//                 let entries = app_state_clone.entries.borrow();
-//                 for entry in entries.iter() {
-//                     entry.get_entry_row().show();
-//                 }
-//                 if let Some(row) = list_box_clone.row_at_index(current_index as i32) {
-//                     list_box_clone.select_row(Some(&row));
-//                     row.grab_focus();
-//                 }
-//                 Inhibit(true)
-//             }
-//             _ => {
-//                 
-//                 Inhibit(false)
-//             }
-//         }
-//     });
-//
-//     Inhibit(true)
-// }
+fn set_search_entry_appearance(search_entry: &SearchEntry, error: bool) {
+    let style_context = search_entry.style_context();
+    if error {
+        style_context.add_class("error");
+    } else {
+        style_context.remove_class("error");
+    }
+}
+
+fn enter_search_mode(
+    search_entry: &SearchEntry,
+    list_box: &ListBox,
+    app_state: &Rc<AppState>,
+    window: &ApplicationWindow,
+) {
+    search_entry.grab_focus();
+
+    let list_box_clone = list_box.clone();
+    let search_entry_clone = search_entry.clone();
+    let app_state_clone = app_state.clone();
+    let window_clone = window.clone();
+
+    let app_state_for_changed = app_state.clone();
+    let list_box_for_changed = list_box.clone();
+    let search_entry_for_change = search_entry.clone();
+    search_entry.connect_changed(move |entry| {
+        let search_text = entry.text();
+        let search_str = search_text.as_str();
+        let rows = app_state_for_changed.rows.clone();
+
+        list_box_for_changed.unselect_all();
+
+        for row in list_box_for_changed.children() {
+            list_box_for_changed.remove(&row);
+        }
+        
+        if search_str.is_empty() {
+            set_search_entry_appearance(&search_entry_for_change, true);
+
+            if *app_state_for_changed.filtered_rows.borrow() == None &&
+               *app_state_for_changed.search_query.borrow() == None 
+            {
+                return;
+            }
+
+            for row in rows.borrow().iter() {
+                list_box_for_changed.add(row);
+            }
+
+            *app_state_for_changed.filtered_rows.borrow_mut() = None;
+            *app_state_for_changed.search_query.borrow_mut() = None;
+
+            if let Some(first_row) = list_box_for_changed.row_at_index(0) {
+                list_box_for_changed.select_row(Some(&first_row));
+            }
+
+            return;
+        }
+        
+        if let Some(cached_results) = app_state_for_changed.search_cache.borrow().get(search_str) {
+            for row in cached_results {
+                list_box_for_changed.add(row);
+            }
+
+            set_search_entry_appearance(&search_entry_for_change, cached_results.is_empty());
+            
+            *app_state_for_changed.filtered_rows.borrow_mut() = if cached_results.is_empty() {
+                None
+            } else {
+                Some(cached_results.clone())
+            };
+            
+            *app_state_for_changed.search_query.borrow_mut() = if search_str.is_empty() {
+                None
+            } else {
+                Some(search_str.to_string())
+            };
+
+            if let Some(first_row) = list_box_for_changed.row_at_index(0) {
+                list_box_for_changed.select_row(Some(&first_row));
+            }
+
+            return;
+        }
+
+        let last_query = app_state_for_changed.search_query.borrow().clone();
+        let row_map = app_state_for_changed.row_to_entry_map.borrow();
+
+        let rows_borrowed = rows.borrow();
+        let rows_to_search: Vec<&ListBoxRow> = if let Some(ref last_q) = last_query {
+            if search_str.starts_with(last_q) {
+                if let Some(ref filtered) = *app_state_for_changed.filtered_rows.borrow() {
+                    filtered.iter()
+                        .filter_map(|row| row_map.get_key_value(row).map(|(k, _)| k))
+                        .collect()
+                } else {
+                    rows_borrowed.iter().collect()
+                }
+            } else {
+                rows_borrowed.iter().collect()
+            }
+        } else {
+            rows_borrowed.iter().collect()
+        }; 
+
+        let mut filtered_rows: Vec<ListBoxRow> = Vec::new();
+        for row in rows_to_search {
+            if let Some(entry) = row_map.get(row) {
+                if entry.contains_text(&search_str.to_lowercase()) {
+                    filtered_rows.push(row.clone());
+                    list_box_for_changed.add(row);
+                }             
+            }
+        }
+
+        set_search_entry_appearance(&search_entry_for_change, filtered_rows.is_empty());
+
+        app_state_for_changed.search_cache.borrow_mut().insert(
+            search_str.to_string(),
+            filtered_rows.clone()
+        );
+        
+        *app_state_for_changed.filtered_rows.borrow_mut() = if filtered_rows.is_empty() {
+            None
+        } else {
+            Some(filtered_rows)
+        };
+        
+        *app_state_for_changed.search_query.borrow_mut() = if search_str.is_empty() {
+            None
+        } else {
+            Some(search_str.to_string())
+        };
+
+        if let Some(first_row) = list_box_for_changed.row_at_index(0) {
+            list_box_for_changed.select_row(Some(&first_row));
+        }
+
+    });
+
+    search_entry.connect_key_press_event(move |_, event| {
+        let keyval = event.keyval();
+        let keyname = keyval.name().unwrap_or_else(|| gtk::glib::GString::from(""));
+        let state = event.state();
+        let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
+
+        if keyname == "Escape" || (ctrl && keyname == "c") {
+            search_entry_clone.set_text("");
+            list_box_clone.unselect_all();
+            for row in list_box_clone.children() {
+                list_box_clone.remove(&row);
+            }
+            for row in app_state_clone.rows.borrow().iter() {
+                list_box_clone.add(row);
+            }
+            set_search_entry_appearance(&search_entry_clone, false);
+            app_state_clone.search_query.replace(None);
+            app_state_clone.filtered_rows.replace(None);
+            if let Some(first_row) = list_box_clone.row_at_index(0) {
+                list_box_clone.select_row(Some(&first_row));
+                first_row.grab_focus();
+            }
+            return Inhibit(true);
+        }
+
+        if keyname == "Return" {
+            if let Some(first_row) = list_box_clone.row_at_index(0) {
+                list_box_clone.select_row(Some(&first_row));
+                first_row.grab_focus();
+            }
+            return Inhibit(true);
+        }
+
+        if ctrl && keyname == "y" {
+            handle_copy_and_close(&window_clone, &list_box_clone, &app_state_clone);
+            return Inhibit(true);
+        }
+        
+        if ctrl && keyname == "j" {
+            move_cursor(&list_box_clone, 1);
+            search_entry_clone.grab_focus();
+            return Inhibit(true);
+        }
+
+        if ctrl && keyname == "k" {
+            move_cursor(&list_box_clone, -1);
+            search_entry_clone.grab_focus();
+            return Inhibit(true);
+        }
+
+        if ctrl && (keyname == "e" || keyname == "o") {
+            handle_open_in_external_app(&list_box_clone, &app_state_clone);
+            return Inhibit(true);
+        }
+
+        return Inhibit(false);
+    });
+}

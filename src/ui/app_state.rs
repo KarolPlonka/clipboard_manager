@@ -1,6 +1,7 @@
 // use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use gtk::ListBoxRow;
 use clipboard_manager::clipboard_entries::clipboard_entry::ClipboardEntry;
 
 #[derive(PartialEq)]
@@ -11,18 +12,12 @@ pub enum DetailsVisibility {
 }
 
 pub struct AppState {
-    // pub entries: RefCell<Vec<Box<dyn ClipboardEntry>>>,
-    pub row_to_entry_map: RefCell<HashMap<gtk::ListBoxRow, Box<dyn ClipboardEntry>>>,
+    pub rows: RefCell<Vec<ListBoxRow>>,
+    pub row_to_entry_map: RefCell<HashMap<ListBoxRow, Box<dyn ClipboardEntry>>>,
     pub details_visibility: RefCell<DetailsVisibility>,
     pub all_entries_loaded: RefCell<bool>,
-    // pub current_index: RefCell<usize>,
+    pub search_query: RefCell<Option<String>>,
+    pub filtered_rows: RefCell<Option<Vec<ListBoxRow>>>,
+    pub search_cache: RefCell<HashMap<String, Vec<ListBoxRow>>>,
 }
 
-// impl AppState {
-//     // pub fn max_index(&self) -> usize {
-//     //     if self.entries.is_empty() { 0 } else { self.entries.len() - 1 }
-//     // }
-//     // pub fn max_index(&self) -> usize {
-//     //
-//     // }
-// }

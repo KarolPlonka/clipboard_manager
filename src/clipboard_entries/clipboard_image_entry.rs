@@ -18,7 +18,6 @@ impl ClipboardImageEntry {
     pub fn new(path: String, uuid: String) -> Self {
         Self { path, uuid }
     }
-
 }
 
 impl ClipboardEntry for ClipboardImageEntry {
@@ -106,7 +105,7 @@ impl ClipboardEntry for ClipboardImageEntry {
         
         let dimensions_label = Label::new(Some(&match dimensions {
             Some((w, h)) => format!("{}×{} px", w, h),
-            None => "Unknown dimensions".to_string()
+            _ => "Unknown dimensions".to_string()
         }));
         dimensions_label.set_xalign(0.0);
         dimensions_label.style_context().add_class("dim-label");
@@ -127,7 +126,7 @@ impl ClipboardEntry for ClipboardImageEntry {
         row
     }
 
-    fn get_more_info(&self, width: i32, height: i32) -> gtk::Widget {
+    fn get_more_info(&self, width: i32, height: i32, _search_query: Option<String>) -> gtk::Widget {
         let margin = 10;
         // Account for both left/right and top/bottom margins
         let available_width = width - (margin * 2);
