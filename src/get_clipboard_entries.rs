@@ -6,7 +6,16 @@ use clipboard_manager::clipboard_entries::clipboard_text_entry::ClipboardTextEnt
 use clipboard_manager::clipboard_entries::clipboard_image_entry::ClipboardImageEntry;
 
 
-fn create_image_entry(uuid: String) -> Result<Box<dyn ClipboardEntry>, io::Error> {
+// TODO: Denest
+
+
+fn create_image_entry(
+    uuid: String,
+    width: i32,
+    row_max_height: i32,
+    more_info_width: i32,
+    more_info_height: i32
+) -> Result<Box<dyn ClipboardEntry>, io::Error> {
     let output = Command::new("gpaste-client")
         .args(&["--raw", "get", &uuid])
         .output()?;
@@ -20,10 +29,26 @@ fn create_image_entry(uuid: String) -> Result<Box<dyn ClipboardEntry>, io::Error
 
     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    Ok(Box::new(ClipboardImageEntry::new(path, uuid)))
+    let image_entry = ClipboardImageEntry::new(
+        path,
+        uuid,
+        width,
+        row_max_height,
+        more_info_width,
+        more_info_height
+    );
+
+    Ok(Box::new(image_entry) as Box<dyn ClipboardEntry>)
 }
 
-pub fn get_clipboard_entries(limit: usize) -> Result<Vec<Box<dyn ClipboardEntry>>, io::Error> {
+pub fn get_clipboard_entries(
+    limit: usize,
+    row_width: i32,
+    row_image_max_height: i32,
+    row_text_max_lines: i32,
+    more_info_width: i32,
+    more_info_height: i32
+) -> Result<Vec<Box<dyn ClipboardEntry>>, io::Error> {
     let output = Command::new("gpaste-client")
         .args(&["history", "--zero"])
         .output()?;
@@ -46,7 +71,13 @@ pub fn get_clipboard_entries(limit: usize) -> Result<Vec<Box<dyn ClipboardEntry>
                 let content = line[colon_pos + 1..].to_string();
                 // Check if the content starts with "image/" to determine if it's an image entry
                 if content.starts_with(" [Image,") {
-                    match create_image_entry(uuid.clone()) {
+                    match create_image_entry(
+                        uuid.clone(),
+                        row_width,
+                        row_image_max_height,
+                        more_info_width,
+                        more_info_height
+                    ) {
                         Ok(entry) => Some(entry),
                         Err(e) => {
                             eprintln!("Error creating image entry for UUID {}: {}", uuid, e);
@@ -57,7 +88,8 @@ pub fn get_clipboard_entries(limit: usize) -> Result<Vec<Box<dyn ClipboardEntry>
                     // Skip empty entries
                     None
                 } else {
-                    Some(Box::new(ClipboardTextEntry::new(content, uuid)) as Box<dyn ClipboardEntry>)
+                    let entry = ClipboardTextEntry::new(content, uuid, row_width, row_text_max_lines, more_info_width);
+                    Some(Box::new(entry) as Box<dyn ClipboardEntry>)
                 }
             } else {
                 eprintln!("Invalid clipboard entry format: {}", line);

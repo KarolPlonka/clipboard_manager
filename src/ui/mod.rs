@@ -1,5 +1,5 @@
 use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow, ListBox, Box, Orientation};
+use gtk::{Application, ApplicationWindow, ListBox, Box as GTKBox, Orientation};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -30,11 +30,18 @@ pub fn build_ui(app: &Application) {
         .decorated(false)
         .build();
 
-    let root_box = Box::new(Orientation::Vertical, 0);
+    let root_box = GTKBox::new(Orientation::Vertical, 0);
 
-    let main_box = Box::new(Orientation::Horizontal, 0);
+    let main_box = GTKBox::new(Orientation::Horizontal, 0);
 
-    let entries = match get_clipboard_entries(INITIAL_ENTRIES) {
+    let entries = match get_clipboard_entries(
+        INITIAL_ENTRIES,
+        ENTRIES_WIDTH,
+        ROW_IMAGE_MAX_HEIGHT,
+        ROW_TEXT_MAX_LINES,
+        INFO_BOX_WIDTH,
+        APP_HEIGHT
+    ) {
         Ok(entries) if !entries.is_empty() => entries,
         Ok(_) => {
             show_error(&window, "No clipboard entries available.");
@@ -68,6 +75,7 @@ pub fn build_ui(app: &Application) {
         filtered_rows: RefCell::new(None),
         search_query: RefCell::new(None),
         search_cache: RefCell::new(HashMap::new()),
+        last_selected_row: RefCell::new(None),
     });
 
     // Setup list selection handler
@@ -91,9 +99,10 @@ pub fn build_ui(app: &Application) {
     window.show_all();
 }
 
+// TODO: denest
 fn setup_list_selection_handler(
     list_box: &ListBox,
-    detail_container: &Box,
+    detail_container: &GTKBox,
     app_state: Rc<AppState>,
 ) {
     let detail_container_clone = detail_container.clone();
@@ -107,8 +116,9 @@ fn setup_list_selection_handler(
                     for child in detail_container_clone.children() {
                         detail_container_clone.remove(&child);
                     }
-                    // Add new content
-                    let detail_widget = entry.get_more_info(INFO_BOX_WIDTH, APP_HEIGHT, app_state.search_query.borrow().clone());
+                    let search_query = app_state.search_query.borrow();
+                    entry.set_highlight_in_row(search_query.clone());
+                    let detail_widget = entry.get_more_info_widget(search_query.clone());
                     detail_container_clone.add(&detail_widget);
                     detail_container_clone.show_all();
                 }

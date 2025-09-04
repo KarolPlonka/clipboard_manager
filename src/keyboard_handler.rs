@@ -7,7 +7,7 @@ use clipboard_manager::clipboard_entries::clipboard_entry::ClipboardEntry;
 
 use crate::get_clipboard_entries::get_clipboard_entries;
 use crate::ui::{AppState, DetailsVisibility};
-use crate::constants::{ENTRIES_WIDTH, INFO_BOX_WIDTH, APP_HEIGHT, INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT, MAX_ENTRIES, INITIAL_ENTRIES};
+use crate::constants::*;
 use crate::ui::append_to_list_view;
 use crate::ui::show_error;
 
@@ -78,6 +78,24 @@ pub fn setup_keyboard_handler(
     list_box.connect_move_cursor(move |_, _step, _count| {
         load_all_entries_if_reached_end(&list_box_for_move, &app_state_for_move, &window_for_move);
     });
+
+    let list_box_clone_for_sc = list_box.clone();
+    let app_state_for_sc = app_state.clone();
+    list_box.connect_selected_rows_changed(move |_| {
+        if let Some(search_entry) = app_state_for_sc.search_query.borrow().clone() {
+            if search_entry.is_empty() {
+                return;
+            }
+            if let Some(last_row) = app_state_for_sc.last_selected_row.borrow().clone() {
+                if let Some(entry) = app_state_for_sc.row_to_entry_map.borrow().get(&last_row) {
+                    entry.set_highlight_in_row(Some(search_entry));
+                }
+            }
+        }
+        if let Some(selected_row) = list_box_clone_for_sc.selected_row() {
+            app_state_for_sc.last_selected_row.replace(Some(selected_row));
+        }
+    });
     
     main_box.connect_key_press_event(move |_, event| {
         let keyval = event.keyval();
@@ -92,7 +110,6 @@ pub fn setup_keyboard_handler(
         match keyname.as_str() {
             "j" => {
                 load_all_entries_if_reached_end(&list_box_clone, &app_state, &window_clone);
-                // return Inhibit(true);
                 return move_cursor(&list_box_clone, 1);
             }
             "k" => move_cursor(&list_box_clone, -1),
@@ -138,7 +155,14 @@ fn load_all_entries(list_box: &ListBox, app_state: &AppState, window: &Applicati
         return;
     }
 
-    let entries = match get_clipboard_entries(MAX_ENTRIES) {
+    let entries = match get_clipboard_entries(
+        MAX_ENTRIES,
+        ENTRIES_WIDTH,
+        ROW_IMAGE_MAX_HEIGHT,
+        ROW_TEXT_MAX_LINES,
+        INFO_BOX_WIDTH,
+        APP_HEIGHT
+    ) {
         Ok(entries) if !entries.is_empty() => entries,
         Ok(_) => {
             show_error(window, "No more clipboard entries available.");
@@ -152,7 +176,7 @@ fn load_all_entries(list_box: &ListBox, app_state: &AppState, window: &Applicati
 
     let new_entries = entries.into_iter().skip(INITIAL_ENTRIES).collect();
 
-    let (rows, row_to_entry_map) = append_to_list_view(list_box, new_entries, ENTRIES_WIDTH);
+    let (rows, row_to_entry_map) = append_to_list_view(list_box, new_entries);
 
     app_state.rows.borrow_mut().extend(rows);
     app_state.row_to_entry_map.borrow_mut().extend(row_to_entry_map);
@@ -179,14 +203,12 @@ fn move_cursor(list_box: &ListBox, offset: i32) -> Inhibit {
         let target_row_clone = target_row.clone();
         idle_add_local(move || {
             target_row_clone.grab_focus();
-            Continue(false) // Don't repeat
+            Continue(false) 
         });
     }
     
     Inhibit(true)
 }
-
-
 
 
 fn hide_detail(
@@ -222,7 +244,8 @@ fn show_normal_detail(
         for child in detail_container.children() {
             detail_container.remove(&child);
         }
-        let detail_widget = entry.get_more_info(INFO_BOX_WIDTH, APP_HEIGHT, app_state.search_query.borrow().clone());
+        entry.set_more_info_widget_size(INFO_BOX_WIDTH, APP_HEIGHT);
+        let detail_widget = entry.get_more_info_widget(app_state.search_query.borrow().clone());
         detail_container.add(&detail_widget);
         detail_container.show_all();
     }
@@ -252,7 +275,8 @@ fn show_big_detail(
         for child in detail_container.children() {
             detail_container.remove(&child);
         }
-        let detail_widget = entry.get_more_info(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT, app_state.search_query.borrow().clone());
+        entry.set_more_info_widget_size(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT);
+        let detail_widget = entry.get_more_info_widget(app_state.search_query.borrow().clone());
         detail_container.add(&detail_widget);
         detail_container.show_all();
     }
@@ -351,7 +375,6 @@ fn enter_search_mode(
     search_entry.connect_changed(move |entry| {
         let search_text = entry.text();
         let search_str = search_text.as_str();
-        let rows = app_state_for_changed.rows.clone();
 
         list_box_for_changed.unselect_all();
 
@@ -368,7 +391,7 @@ fn enter_search_mode(
                 return;
             }
 
-            for row in rows.borrow().iter() {
+            for row in app_state_for_changed.rows.borrow().iter() {
                 list_box_for_changed.add(row);
             }
 
@@ -411,6 +434,7 @@ fn enter_search_mode(
         let last_query = app_state_for_changed.search_query.borrow().clone();
         let row_map = app_state_for_changed.row_to_entry_map.borrow();
 
+        let rows = app_state_for_changed.rows.clone();
         let rows_borrowed = rows.borrow();
         let rows_to_search: Vec<&ListBoxRow> = if let Some(ref last_q) = last_query {
             if search_str.starts_with(last_q) {
@@ -426,12 +450,13 @@ fn enter_search_mode(
             }
         } else {
             rows_borrowed.iter().collect()
-        }; 
+        };
 
         let mut filtered_rows: Vec<ListBoxRow> = Vec::new();
         for row in rows_to_search {
             if let Some(entry) = row_map.get(row) {
                 if entry.contains_text(&search_str.to_lowercase()) {
+                    entry.set_highlight_in_row(Some(search_text.to_string()));
                     filtered_rows.push(row.clone());
                     list_box_for_changed.add(row);
                 }             
@@ -460,7 +485,6 @@ fn enter_search_mode(
         if let Some(first_row) = list_box_for_changed.row_at_index(0) {
             list_box_for_changed.select_row(Some(&first_row));
         }
-
     });
 
     search_entry.connect_key_press_event(move |_, event| {
@@ -476,6 +500,9 @@ fn enter_search_mode(
                 list_box_clone.remove(&row);
             }
             for row in app_state_clone.rows.borrow().iter() {
+                if let Some(entry) = app_state_clone.row_to_entry_map.borrow().get(row) {
+                    entry.set_highlight_in_row(None);
+                }
                 list_box_clone.add(row);
             }
             set_search_entry_appearance(&search_entry_clone, false);
@@ -503,13 +530,23 @@ fn enter_search_mode(
         
         if ctrl && keyname == "j" {
             move_cursor(&list_box_clone, 1);
-            search_entry_clone.grab_focus();
+            let search_entry_for_grab_focus = search_entry_clone.clone();
+            idle_add_local(move || {
+                search_entry_for_grab_focus.grab_focus();
+                search_entry_for_grab_focus.set_position(-1);
+                Continue(false)
+            });
             return Inhibit(true);
         }
 
         if ctrl && keyname == "k" {
             move_cursor(&list_box_clone, -1);
-            search_entry_clone.grab_focus();
+            let search_entry_for_grab_focus = search_entry_clone.clone();
+            idle_add_local(move || {
+                search_entry_for_grab_focus.grab_focus();
+                search_entry_for_grab_focus.set_position(-1);
+                Continue(false)
+            });
             return Inhibit(true);
         }
 

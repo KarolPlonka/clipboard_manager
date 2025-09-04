@@ -19,5 +19,6 @@ pub struct AppState {
     pub search_query: RefCell<Option<String>>,
     pub filtered_rows: RefCell<Option<Vec<ListBoxRow>>>,
     pub search_cache: RefCell<HashMap<String, Vec<ListBoxRow>>>,
+    pub last_selected_row: RefCell<Option<ListBoxRow>>,
 }
 
