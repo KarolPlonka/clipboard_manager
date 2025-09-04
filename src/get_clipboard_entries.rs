@@ -13,8 +13,6 @@ fn create_image_entry(
     uuid: String,
     width: i32,
     row_max_height: i32,
-    more_info_width: i32,
-    more_info_height: i32
 ) -> Result<Box<dyn ClipboardEntry>, io::Error> {
     let output = Command::new("gpaste-client")
         .args(&["--raw", "get", &uuid])
@@ -34,8 +32,6 @@ fn create_image_entry(
         uuid,
         width,
         row_max_height,
-        more_info_width,
-        more_info_height
     );
 
     Ok(Box::new(image_entry) as Box<dyn ClipboardEntry>)
@@ -46,8 +42,6 @@ pub fn get_clipboard_entries(
     row_width: i32,
     row_image_max_height: i32,
     row_text_max_lines: i32,
-    more_info_width: i32,
-    more_info_height: i32
 ) -> Result<Vec<Box<dyn ClipboardEntry>>, io::Error> {
     let output = Command::new("gpaste-client")
         .args(&["history", "--zero"])
@@ -75,8 +69,6 @@ pub fn get_clipboard_entries(
                         uuid.clone(),
                         row_width,
                         row_image_max_height,
-                        more_info_width,
-                        more_info_height
                     ) {
                         Ok(entry) => Some(entry),
                         Err(e) => {
@@ -88,7 +80,7 @@ pub fn get_clipboard_entries(
                     // Skip empty entries
                     None
                 } else {
-                    let entry = ClipboardTextEntry::new(content, uuid, row_width, row_text_max_lines, more_info_width);
+                    let entry = ClipboardTextEntry::new(content, uuid, row_width, row_text_max_lines);
                     Some(Box::new(entry) as Box<dyn ClipboardEntry>)
                 }
             } else {

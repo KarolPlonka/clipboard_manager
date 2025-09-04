@@ -160,8 +160,6 @@ fn load_all_entries(list_box: &ListBox, app_state: &AppState, window: &Applicati
         ENTRIES_WIDTH,
         ROW_IMAGE_MAX_HEIGHT,
         ROW_TEXT_MAX_LINES,
-        INFO_BOX_WIDTH,
-        APP_HEIGHT
     ) {
         Ok(entries) if !entries.is_empty() => entries,
         Ok(_) => {
@@ -244,8 +242,11 @@ fn show_normal_detail(
         for child in detail_container.children() {
             detail_container.remove(&child);
         }
-        entry.set_more_info_widget_size(INFO_BOX_WIDTH, APP_HEIGHT);
-        let detail_widget = entry.get_more_info_widget(app_state.search_query.borrow().clone());
+        let detail_widget = entry.create_more_info_widget(
+            INFO_BOX_WIDTH,
+            APP_HEIGHT,
+            app_state.search_query.borrow().clone()
+        );
         detail_container.add(&detail_widget);
         detail_container.show_all();
     }
@@ -275,8 +276,11 @@ fn show_big_detail(
         for child in detail_container.children() {
             detail_container.remove(&child);
         }
-        entry.set_more_info_widget_size(INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT);
-        let detail_widget = entry.get_more_info_widget(app_state.search_query.borrow().clone());
+        let detail_widget = entry.create_more_info_widget(
+            INFO_BOX_BIG_WIDTH,
+            INFO_BOX_BIG_HEIGHT,
+            app_state.search_query.borrow().clone()
+        );
         detail_container.add(&detail_widget);
         detail_container.show_all();
     }
@@ -393,6 +397,9 @@ fn enter_search_mode(
 
             for row in app_state_for_changed.rows.borrow().iter() {
                 list_box_for_changed.add(row);
+                if let Some(entry) = app_state_for_changed.row_to_entry_map.borrow().get(row) {
+                    entry.set_highlight_in_row(None);
+                }
             }
 
             *app_state_for_changed.filtered_rows.borrow_mut() = None;
@@ -408,6 +415,9 @@ fn enter_search_mode(
         if let Some(cached_results) = app_state_for_changed.search_cache.borrow().get(search_str) {
             for row in cached_results {
                 list_box_for_changed.add(row);
+                if let Some(entry) = app_state_for_changed.row_to_entry_map.borrow().get(row) {
+                    entry.set_highlight_in_row(Some(search_text.to_string()));
+                }
             }
 
             set_search_entry_appearance(&search_entry_for_change, cached_results.is_empty());

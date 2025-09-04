@@ -10,11 +10,10 @@ use glib::markup_escape_text;
 #[derive(Debug, Clone)]
 pub struct ClipboardTextEntry {
     full_content: String,
-    shorten_content: String,
+    shorten_content: Option<String>,
     uuid: String,
     row: ListBoxRow,
     row_label: Label,
-    more_info_label: Label,
 }
 
 impl ClipboardTextEntry {
@@ -22,11 +21,14 @@ impl ClipboardTextEntry {
     const HIGHLIGHT_FORMAT: &'static str = "<span background='#E95420' foreground='white' weight='bold'>%s</span>";
     const HIGHLIGHT_FORMAT_SELECTED: &'static str = "<span background='#333' foreground='white' weight='bold'>%s</span>";
 
-    pub fn new(full_content: String, uuid: String, row_width: i32, row_max_lines: i32, more_info_width: i32) -> Self {
+    pub fn new(full_content: String, uuid: String, row_width: i32, row_max_lines: i32) -> Self {
         let shorten_content = Self::create_shorten_content(&full_content, row_max_lines as usize);
-        let (row, row_label) = Self::create_entry_row(&shorten_content, row_width);
-        let more_info_label = Self::create_more_info_label(&full_content, more_info_width);
-        return Self{full_content, shorten_content, uuid, row, row_label, more_info_label}
+        let entry_row_content = match &shorten_content {
+            Some(shortened) => format!("{}\n...", shortened),
+            _ => full_content.clone(),
+        };
+        let (row, row_label) = Self::create_entry_row(&entry_row_content, row_width);
+        return Self { full_content, shorten_content, uuid, row, row_label }
     }
 
     fn create_entry_row(text: &String, width: i32) -> (ListBoxRow, Label) {
@@ -43,37 +45,21 @@ impl ClipboardTextEntry {
         return (row, label);
     }
 
-    fn create_more_info_label(text: &String, width: i32) -> Label {
-        let label = Label::new(Some(text));
-        
-        label.set_xalign(0.0);
-        label.set_margin_start(10);
-        label.set_margin_end(10);
-        label.set_margin_top(8);
-        label.set_margin_bottom(8);
-        label.set_width_chars(width);
-        
-        return label;
-    }
-
-    fn create_shorten_content(content: &str, max_lines: usize) -> String {
+    fn create_shorten_content(content: &str, max_lines: usize) -> Option<String> {
         let lines: Vec<&str> = content.lines().collect();
-        let mut result = Vec::new();
         
-        for (i, line) in lines.iter().enumerate() {
-            if i >= max_lines {
-                if i == max_lines {
-                    result.push("...".to_string());
-                }
-                break;
-            }
-            result.push(line.to_string());
+        if lines.len() <= max_lines {
+            None
+        } else {
+            let shortened: Vec<_> = lines.iter()
+                .take(max_lines)
+                .map(|&line| line.to_string())
+                .collect();
+            Some(shortened.join("\n"))
         }
-        
-        return result.join("\n");
     }
 
-    fn highlight_text(&self, text: &str, query: &str, format: &str) -> Option<String> {
+    fn highlight_in_text(&self, text: &str, query: &str, format: &str) -> Option<String> {
         if query.is_empty() {
             return None;
         }
@@ -83,9 +69,11 @@ impl ClipboardTextEntry {
         
         let mut result = String::new();
         let mut last_end = 0;
+        let mut found_match = false; // Track if we found any matches
         
         let mut search_start = 0;
         while let Some(match_start) = text_lower[search_start..].find(&query_lower) {
+            found_match = true; // We found at least one match
             let absolute_start = search_start + match_start;
             let absolute_end = absolute_start + query.len();
             
@@ -101,6 +89,10 @@ impl ClipboardTextEntry {
             search_start = absolute_end;
         }
         
+        if !found_match {
+            return None; // No matches found, return None
+        }
+        
         if last_end < text.len() {
             result.push_str(&markup_escape_text(&text[last_end..]));
         }
@@ -114,26 +106,21 @@ impl ClipboardEntry for ClipboardTextEntry {
         return self.row.clone();
     }
 
-    fn get_more_info_widget(&self, search_query: Option<String>) -> Widget {
-        let label = self.more_info_label.clone();
+    fn create_more_info_widget(&self, width: i32, _height: i32, search_query: Option<String>) -> gtk::Widget {
+        let label = Label::new(None);
+        label.set_xalign(0.0);
+        label.set_margin_start(10);
+        label.set_margin_end(10);
+        label.set_margin_top(8);
+        label.set_margin_bottom(8);
+        label.set_width_chars(width);
 
-        let highlighted_content = search_query
-            .filter(|query| !query.is_empty())
-            .and_then(|query| {
-                self.highlight_text(&self.shorten_content, &query, Self::HIGHLIGHT_FORMAT)
-            });
-
-        match highlighted_content {
+        match search_query.and_then(|query| self.highlight_in_text(&self.full_content, &query, Self::HIGHLIGHT_FORMAT)) {
             Some(markup) => label.set_markup(&markup),
-            _ => label.set_text(&self.shorten_content),
-        }
-        
-        label.show_all();
-        label.upcast::<Widget>()
-    }
+            _ => label.set_text(&self.full_content),
+        }        
 
-    fn set_more_info_widget_size(&self, width: i32, _height: i32) {
-        self.more_info_label.set_width_chars(width);
+        label.upcast::<Widget>()
     }
 
     fn contains_text(&self, search_text: &String) -> bool {
@@ -141,20 +128,47 @@ impl ClipboardEntry for ClipboardTextEntry {
     }
 
     fn set_highlight_in_row(&self, search_query: Option<String>) {
-        let highlighted_content = search_query
-            .filter(|query| !query.is_empty())
-            .and_then(|query| {
+        let (content, is_shortened) = match &self.shorten_content {
+            Some(shortened) => (shortened, true),
+            _ => (&self.full_content, false),
+        };
+        
+        match search_query.filter(|query| !query.is_empty()) {
+            Some(query) => {
                 let format = if self.row.is_selected() {
                     Self::HIGHLIGHT_FORMAT_SELECTED
                 } else {
                     Self::HIGHLIGHT_FORMAT
                 };
-                self.highlight_text(&self.shorten_content, &query, format)
-            });
-
-        match highlighted_content {
-            Some(markup) => self.row_label.set_markup(&markup),
-            _ => self.row_label.set_text(&self.shorten_content),
+                
+                let markup = if let Some(highlighted) = self.highlight_in_text(content, &query, format) {
+                    // Add non-highlighted dots if content is shortened
+                    if is_shortened {
+                        format!("{}\n...", highlighted)
+                    } else {
+                        highlighted
+                    }
+                } else {
+                    // No match found - show query highlighted separately
+                    let highlighted_dots = format.replace("%s", "...");
+                    format!("{}{}\n{}", 
+                        markup_escape_text(content),
+                        if is_shortened { "..." } else { "" },
+                        highlighted_dots
+                    )
+                };
+                
+                self.row_label.set_markup(&markup);
+            }
+            _ => {
+                // No search query - just set plain text with dots if shortened
+                let display_text = if is_shortened {
+                    format!("{}\n...", content)
+                } else {
+                    content.to_string()
+                };
+                self.row_label.set_text(&display_text);
+            }
         }
     }
 

@@ -39,8 +39,6 @@ pub fn build_ui(app: &Application) {
         ENTRIES_WIDTH,
         ROW_IMAGE_MAX_HEIGHT,
         ROW_TEXT_MAX_LINES,
-        INFO_BOX_WIDTH,
-        APP_HEIGHT
     ) {
         Ok(entries) if !entries.is_empty() => entries,
         Ok(_) => {
@@ -118,12 +116,16 @@ fn setup_list_selection_handler(
                     }
                     let search_query = app_state.search_query.borrow();
                     entry.set_highlight_in_row(search_query.clone());
-                    let detail_widget = entry.get_more_info_widget(search_query.clone());
+                    let (width, height) = if *app_state.details_visibility.borrow() == DetailsVisibility::Big {
+                        (INFO_BOX_BIG_WIDTH, INFO_BOX_BIG_HEIGHT)
+                    } else {
+                        (INFO_BOX_WIDTH, APP_HEIGHT)
+                    };
+                    let detail_widget = entry.create_more_info_widget(width, height, search_query.clone());
                     detail_container_clone.add(&detail_widget);
                     detail_container_clone.show_all();
                 }
             } else {
-                // Clear detail view if no row is selected
                 for child in detail_container_clone.children() {
                     detail_container_clone.remove(&child);
                 }

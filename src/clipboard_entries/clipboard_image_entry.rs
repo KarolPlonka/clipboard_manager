@@ -1,4 +1,5 @@
 use gtk::{ListBoxRow, Label, Image, Box as GTKBox, Orientation};
+// use std::cell::RefCell;
 use gtk::prelude::*;
 use gtk::gdk_pixbuf::Pixbuf;
 use super::clipboard_entry::ClipboardEntry;
@@ -13,7 +14,7 @@ pub struct ClipboardImageEntry {
     image_path: String,
     uuid: String,
     row: ListBoxRow,
-    more_info_box: GTKBox,
+    pixbuf: Option<Pixbuf>
 }
 
 impl ClipboardImageEntry {
@@ -24,15 +25,10 @@ impl ClipboardImageEntry {
         uuid: String,
         row_width: i32,
         row_max_height: i32,
-        more_info_width: i32,
-        more_info_height: i32
     ) -> Self {
-        let row = Self::create_entry_row(&image_path, row_width, row_max_height, Self::MARGIN);
-        let more_info_box = GTKBox::new(Orientation::Vertical, 0);
-        if let Some(more_info_image) = Self::create_more_info_image(&image_path, more_info_width, more_info_height, Self::MARGIN) {
-            Self::pack_image_to_more_info_box(&more_info_box, &more_info_image, Self::MARGIN);
-        }
-        Self {image_path, uuid, row, more_info_box}
+        let pixbuf = Pixbuf::from_file(&image_path).ok();
+        let row = Self::create_entry_row(pixbuf.as_ref(), &image_path, row_width, row_max_height, Self::MARGIN);
+        Self {image_path, uuid, row, pixbuf} 
     }
 
     fn scale_pixbuf(pixbuf: &Pixbuf, max_width: i32, max_height: i32) -> Option<Pixbuf> {
@@ -58,7 +54,7 @@ impl ClipboardImageEntry {
         return scaled_pixbuf;
     }
 
-    fn create_entry_row(image_path: &String, width: i32, max_height: i32, margin: i32) -> ListBoxRow {
+    fn create_entry_row(pixbuf: Option<&Pixbuf>, image_path: &String, width: i32, max_height: i32, margin: i32) -> ListBoxRow {
         let row = ListBoxRow::new();
         
         let hbox = GTKBox::new(Orientation::Horizontal, margin);
@@ -67,14 +63,22 @@ impl ClipboardImageEntry {
         hbox.set_margin_top(margin);
         hbox.set_margin_bottom(margin);
 
-        let (image, dimensions) = (|| {
-            let pixbuf = Pixbuf::from_file(image_path).ok()?;
-            let scaled_pixbuf = Self::scale_pixbuf(&pixbuf, width - (2 * margin), max_height - (2 * margin))?;
-            let img = Image::from_pixbuf(Some(&scaled_pixbuf));
-            Some((img, Some((pixbuf.width() as u32, pixbuf.height() as u32))))
-        })().unwrap_or_else(|| {
-            (Image::from_icon_name(Some("image-missing"), gtk::IconSize::Dialog), None)
-        });
+        let (image, dimensions) = pixbuf
+            .and_then(|pixbuf| {
+                let scaled_pixbuf = Self::scale_pixbuf(
+                    &pixbuf,
+                    width - (2 * margin),
+                    max_height - (2 * margin),
+                )?;
+                
+                let img = Image::from_pixbuf(Some(&scaled_pixbuf));
+                let dimensions = (pixbuf.width() as u32, pixbuf.height() as u32);
+                
+                Some((img, Some(dimensions)))
+            })
+            .unwrap_or_else(|| {
+                (Image::from_icon_name(Some("image-missing"), gtk::IconSize::Dialog), None)
+            });
 
         let info_vbox = GTKBox::new(Orientation::Vertical, 2);
         info_vbox.set_halign(gtk::Align::Start);
@@ -124,25 +128,6 @@ impl ClipboardImageEntry {
         row.show_all();
         return row;
     }
-
-    fn create_more_info_image(path: &String, width: i32, height: i32, margin: i32) -> Option<Image> {
-        let available_width = width - (margin * 2);
-        let available_height = height - (margin * 2);
-
-        let pixbuf = Pixbuf::from_file(path).ok()?;
-        let scaled_pixbuf = Self::scale_pixbuf(&pixbuf, available_width, available_height)?;
-        let image = Image::from_pixbuf(Some(&scaled_pixbuf));
-        Some(image)
-    }
-
-    fn pack_image_to_more_info_box(more_info_box: &GTKBox, image: &Image, margin: i32) {
-        for child in more_info_box.children() {
-            more_info_box.remove(&child);
-        }
-        more_info_box.set_margin_top(margin);
-        more_info_box.set_margin_bottom(margin);
-        more_info_box.pack_start(image, true, true, 0);
-    }
 }
 
 impl ClipboardEntry for ClipboardImageEntry {
@@ -150,14 +135,27 @@ impl ClipboardEntry for ClipboardImageEntry {
         self.row.clone()
     }
 
-    fn get_more_info_widget(&self, _search_query: Option<String>) -> gtk::Widget {
-        self.more_info_box.clone().upcast::<gtk::Widget>()
-    }
+    fn create_more_info_widget(&self, width: i32, height: i32, _search_query: Option<String>) -> gtk::Widget {
+        let more_info_box = GTKBox::new(Orientation::Vertical, Self::MARGIN);
+        more_info_box.set_margin_top(Self::MARGIN);
+        more_info_box.set_margin_bottom(Self::MARGIN);
 
-    fn set_more_info_widget_size(&self, width: i32, height: i32) {
-        if let Some(new_image) = Self::create_more_info_image(&self.image_path, width, height, Self::MARGIN){
-            Self::pack_image_to_more_info_box(&self.more_info_box, &new_image, Self::MARGIN);
-        }
+        let Some(pixbuf) = self.pixbuf.as_ref() else {
+            return more_info_box.upcast::<gtk::Widget>();
+        };
+
+        let Some(scaled_pixbuf) = Self::scale_pixbuf(
+            &pixbuf,
+            width - (Self::MARGIN * 2),
+            height - (Self::MARGIN * 2) 
+        ) else {
+            return more_info_box.upcast::<gtk::Widget>();
+        };
+
+        let image = Image::from_pixbuf(Some(&scaled_pixbuf));
+
+        more_info_box.pack_start(&image, true, true, 0);
+        return more_info_box.upcast::<gtk::Widget>();
     }
 
     fn copy_to_clipboard(&self) -> Result<(), io::Error> {
