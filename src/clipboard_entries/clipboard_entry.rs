@@ -1,5 +1,4 @@
 use gtk::ListBoxRow;
-use gtk::Widget;
 use std::io;
 
 

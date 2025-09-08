@@ -1,13 +1,10 @@
 use gtk::{ListBoxRow, Label, Image, Box as GTKBox, Orientation};
-// use std::cell::RefCell;
 use gtk::prelude::*;
 use gtk::gdk_pixbuf::Pixbuf;
 use super::clipboard_entry::ClipboardEntry;
 use crate::copy_to_clipboard_by_gpaste_uuid;
 use crate::open_in_external_app;
-use std::io;
-use std::path::Path;
-use std::fs;
+use std::{io, fs};
 
 #[derive(Debug, Clone)]
 pub struct ClipboardImageEntry {
@@ -83,11 +80,6 @@ impl ClipboardImageEntry {
         let info_vbox = GTKBox::new(Orientation::Vertical, 2);
         info_vbox.set_halign(gtk::Align::Start);
         
-        let path_obj = Path::new(image_path);
-        let extension = path_obj.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("unknown");
-        
         let size_str = match fs::metadata(image_path) {
             Ok(metadata) => {
                 let size = metadata.len();
@@ -112,14 +104,17 @@ impl ClipboardImageEntry {
         }));
         dimensions_label.set_xalign(0.0);
         dimensions_label.style_context().add_class("dim-label");
-        
-        let ext_label = Label::new(Some(&format!(".{}", extension.to_uppercase())));
-        ext_label.set_xalign(0.0);
-        ext_label.style_context().add_class("dim-label");
+
+        let path_label = Label::new(Some(&image_path));
+        path_label.set_xalign(0.0);
+        path_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        path_label.set_max_width_chars(50);
+        path_label.set_tooltip_text(Some(&image_path));
+        path_label.style_context().add_class("dim-label");
         
         info_vbox.pack_start(&size_label, false, false, 0);
         info_vbox.pack_start(&dimensions_label, false, false, 0);
-        info_vbox.pack_start(&ext_label, false, false, 0);
+        info_vbox.pack_start(&path_label, false, false, 0);
         
         hbox.pack_start(&image, false, false, 0);
         hbox.pack_start(&info_vbox, true, true, 0);
@@ -137,8 +132,7 @@ impl ClipboardEntry for ClipboardImageEntry {
 
     fn create_more_info_widget(&self, width: i32, height: i32, _search_query: Option<String>) -> gtk::Widget {
         let more_info_box = GTKBox::new(Orientation::Vertical, Self::MARGIN);
-        more_info_box.set_margin_top(Self::MARGIN);
-        more_info_box.set_margin_bottom(Self::MARGIN);
+        more_info_box.set_margin(Self::MARGIN);
 
         let Some(pixbuf) = self.pixbuf.as_ref() else {
             return more_info_box.upcast::<gtk::Widget>();

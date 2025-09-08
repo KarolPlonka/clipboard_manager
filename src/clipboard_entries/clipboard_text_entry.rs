@@ -34,14 +34,14 @@ impl ClipboardTextEntry {
     fn create_entry_row(text: &String, width: i32) -> (ListBoxRow, Label) {
         let label = Label::new(Some(text));
         label.set_xalign(0.0);
-        label.set_margin_start(Self::MARGIN);
-        label.set_margin_end(Self::MARGIN);
-        label.set_margin_top(Self::MARGIN);
-        label.set_margin_bottom(Self::MARGIN); label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        label.set_margin(Self::MARGIN);
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         label.set_size_request(width - (2 * Self::MARGIN), -1);
+
         let row = ListBoxRow::new();
         row.add(&label);
         row.set_size_request(width, -1);
+
         return (row, label);
     }
 
@@ -59,7 +59,7 @@ impl ClipboardTextEntry {
         }
     }
 
-    fn highlight_in_text(&self, text: &str, query: &str, format: &str) -> Option<String> {
+    fn highlight_in_text(text: &str, query: &str, format: &str) -> Option<String> {
         if query.is_empty() {
             return None;
         }
@@ -106,16 +106,12 @@ impl ClipboardEntry for ClipboardTextEntry {
         return self.row.clone();
     }
 
-    fn create_more_info_widget(&self, width: i32, _height: i32, search_query: Option<String>) -> gtk::Widget {
+    fn create_more_info_widget(&self, _width: i32, _height: i32, search_query: Option<String>) -> gtk::Widget {
         let label = Label::new(None);
+        label.set_margin(Self::MARGIN);
         label.set_xalign(0.0);
-        label.set_margin_start(10);
-        label.set_margin_end(10);
-        label.set_margin_top(8);
-        label.set_margin_bottom(8);
-        label.set_width_chars(width);
 
-        match search_query.and_then(|query| self.highlight_in_text(&self.full_content, &query, Self::HIGHLIGHT_FORMAT)) {
+        match search_query.and_then(|query| ClipboardTextEntry::highlight_in_text(&self.full_content, &query, Self::HIGHLIGHT_FORMAT)) {
             Some(markup) => label.set_markup(&markup),
             _ => label.set_text(&self.full_content),
         }        
@@ -141,15 +137,13 @@ impl ClipboardEntry for ClipboardTextEntry {
                     Self::HIGHLIGHT_FORMAT
                 };
                 
-                let markup = if let Some(highlighted) = self.highlight_in_text(content, &query, format) {
-                    // Add non-highlighted dots if content is shortened
+                let markup = if let Some(highlighted) = ClipboardTextEntry::highlight_in_text(content, &query, format) {
                     if is_shortened {
                         format!("{}\n...", highlighted)
                     } else {
                         highlighted
                     }
                 } else {
-                    // No match found - show query highlighted separately
                     let highlighted_dots = format.replace("%s", "...");
                     format!("{}{}\n{}", 
                         markup_escape_text(content),
@@ -161,7 +155,6 @@ impl ClipboardEntry for ClipboardTextEntry {
                 self.row_label.set_markup(&markup);
             }
             _ => {
-                // No search query - just set plain text with dots if shortened
                 let display_text = if is_shortened {
                     format!("{}\n...", content)
                 } else {
