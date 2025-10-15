@@ -1,8 +1,7 @@
-// use std::rc::Rc;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use gtk::ListBoxRow;
-use clipboard_manager::clipboard_entries::clipboard_entry::ClipboardEntry;
+use std::{cell::RefCell, collections::HashMap};
+
+use clipboard_manager::clipboard_entries::ClipboardEntry;
 
 #[derive(PartialEq)]
 pub enum DetailsVisibility {

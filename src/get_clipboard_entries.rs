@@ -1,10 +1,11 @@
-use std::process::Command;
-use std::io;
+use std::{io, process::Command};
 
-use clipboard_manager::clipboard_entries::clipboard_entry::ClipboardEntry;
-use clipboard_manager::clipboard_entries::clipboard_text_entry::ClipboardTextEntry;
-use clipboard_manager::clipboard_entries::clipboard_image_entry::ClipboardImageEntry;
-use clipboard_manager::clipboard_entries::clipboard_file_entry::ClipboardFileEntry;
+use clipboard_manager::clipboard_entries::{
+    ClipboardEntry,
+    ClipboardFileEntry,
+    ClipboardImageEntry,
+    ClipboardTextEntry,
+};
 
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "tiff", "webp"];
 

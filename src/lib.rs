@@ -1,8 +1,34 @@
-use std::io::{self, Write};
-use std::process::Command;
+use std::{
+    io::{self, Write},
+    process::Command,
+};
 use tempfile::NamedTempFile;
 
 pub mod clipboard_entries;
+
+pub fn copy_text_to_clipboard(text: &str) -> Result<(), io::Error> {
+    let mut child = Command::new("gpaste-client")
+        .arg("add")
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
+    
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin.write_all(text.as_bytes())?;
+    } else {
+        return Err(io::Error::new(io::ErrorKind::Other, "Failed to open stdin"));
+    }
+    
+    let output = child.wait_with_output()?;
+    
+    if !output.status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("gpaste-client command failed with status: {}", output.status)
+        ));
+    }
+    
+    Ok(())
+}
 
 pub fn copy_to_clipboard_by_gpaste_uuid(uuid: &str) -> Result<(), io::Error> {
     let output = Command::new("gpaste-client")

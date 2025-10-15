@@ -1,5 +1,4 @@
-use gtk::prelude::*;
-use gtk::{ScrolledWindow, Box, Orientation};
+use gtk::{prelude::*, Box, Orientation, ScrolledWindow};
 
 pub fn create_detail_view(width: i32) -> (ScrolledWindow, Box) {
     let detail_scrolled_window = ScrolledWindow::builder()

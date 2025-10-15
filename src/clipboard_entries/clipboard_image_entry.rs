@@ -1,10 +1,11 @@
-use gtk::{ListBoxRow, Label, Image, Box as GTKBox, Orientation};
-use gtk::prelude::*;
-use gtk::gdk_pixbuf::Pixbuf;
+use gtk::{
+    gdk_pixbuf::Pixbuf, prelude::*, Box as GTKBox, Image, Label, ListBoxRow, Orientation,
+};
+use std::{fs, io};
+
+use crate::{copy_text_to_clipboard, copy_to_clipboard_by_gpaste_uuid, open_in_external_app};
+
 use super::clipboard_entry::ClipboardEntry;
-use crate::copy_to_clipboard_by_gpaste_uuid;
-use crate::open_in_external_app;
-use std::{io, fs};
 
 #[derive(Debug, Clone)]
 pub struct ClipboardImageEntry {
@@ -152,8 +153,12 @@ impl ClipboardEntry for ClipboardImageEntry {
         return more_info_box.upcast::<gtk::Widget>();
     }
 
-    fn copy_to_clipboard(&self) -> Result<(), io::Error> {
-        copy_to_clipboard_by_gpaste_uuid(&self.uuid)
+    fn copy_to_clipboard(&self, copy_path: bool) -> Result<(), io::Error> {
+        if copy_path {
+            return copy_text_to_clipboard(&self.image_path);
+        } else {
+            return copy_to_clipboard_by_gpaste_uuid(&self.uuid);
+        }
     }
 
 

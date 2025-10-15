@@ -1,13 +1,10 @@
-use gtk::prelude::*;
-use gtk::{ApplicationWindow, Label, Inhibit};
-use gtk::gdk::{keys, ModifierType};
+use gtk::{gdk::{keys, ModifierType}, prelude::*, ApplicationWindow, Inhibit, Label};
 
 pub fn show_error(window: &ApplicationWindow, message: &str) {
     for child in window.children() {
         window.remove(&child);
     }
     
-    // Add key information to the message
     let full_message = format!("{}\n\n(Press Escape or Ctrl+C to close)", message);
     
     let error_label = Label::new(Some(&full_message));
@@ -18,13 +15,11 @@ pub fn show_error(window: &ApplicationWindow, message: &str) {
         let keyval = event.keyval();
         let state = event.state();
         
-        // Check for Escape key
         if keyval == keys::constants::Escape {
             window_clone.close();
             return gtk::Inhibit(true);
         }
         
-        // Check for Ctrl+C
         if state.contains(ModifierType::CONTROL_MASK) && keyval == keys::constants::c {
             window_clone.close();
             return Inhibit(true);
@@ -35,5 +30,4 @@ pub fn show_error(window: &ApplicationWindow, message: &str) {
     
     window.add(&error_label);
     error_label.show();
-    // window.show_all();
 }

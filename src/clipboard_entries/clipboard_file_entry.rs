@@ -1,12 +1,11 @@
-use gtk::{ListBoxRow, Label, Widget, glib, Image, Box as GTKBox, Orientation};
-use gtk::prelude::*;
+use gtk::{
+    glib::markup_escape_text, prelude::*, Box as GTKBox, Image, Label, ListBoxRow, Orientation, Widget,
+};
+use std::{fs, io};
+
+use crate::{copy_text_to_clipboard, copy_to_clipboard_by_gpaste_uuid, open_in_external_app};
+
 use super::clipboard_entry::ClipboardEntry;
-use crate::open_in_external_app;
-use crate::copy_to_clipboard_by_gpaste_uuid;
-use std::io;
-// use std::path::Path;
-use glib::markup_escape_text;
-use std::fs;
 
 #[derive(Debug, Clone)]
 pub struct ClipboardFileEntry {
@@ -64,11 +63,11 @@ impl ClipboardFileEntry {
         
         let mut result = String::new();
         let mut last_end = 0;
-        let mut found_match = false; // Track if we found any matches
+        let mut found_match = false; 
         
         let mut search_start = 0;
         while let Some(match_start) = text_lower[search_start..].find(&query_lower) {
-            found_match = true; // We found at least one match
+            found_match = true; 
             let absolute_start = search_start + match_start;
             let absolute_end = absolute_start + query.len();
             
@@ -85,7 +84,7 @@ impl ClipboardFileEntry {
         }
         
         if !found_match {
-            return None; // No matches found, return None
+            return None; 
         }
         
         if last_end < text.len() {
@@ -150,8 +149,12 @@ impl ClipboardEntry for ClipboardFileEntry {
         }
     }
 
-    fn copy_to_clipboard(&self) -> Result<(), io::Error> {
-        copy_to_clipboard_by_gpaste_uuid(&self.uuid)
+    fn copy_to_clipboard(&self, copy_path: bool) -> Result<(), io::Error> {
+        if copy_path {
+            copy_text_to_clipboard(&self.file_path)
+        } else {
+            copy_to_clipboard_by_gpaste_uuid(&self.uuid)
+        }
     }
 
     fn open_in_external_app(&self) -> Result<(), io::Error> {

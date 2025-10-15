@@ -1,12 +1,11 @@
-use gtk::prelude::*;
-use gtk::{Application, gio};
+use gtk::{gio, prelude::*, Application};
 
-mod get_clipboard_entries;
-mod ui;
-mod keyboard_handler;
+use crate::ui::build_ui;
+
 mod constants;
-
-use ui::build_ui;
+mod get_clipboard_entries;
+mod keyboard;
+mod ui;
 
 fn main() {
     let app = Application::builder()

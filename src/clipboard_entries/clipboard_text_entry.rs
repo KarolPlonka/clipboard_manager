@@ -1,11 +1,9 @@
-use gtk::{ListBoxRow, Label, Widget, glib};
-use gtk::prelude::*;
-use super::clipboard_entry::ClipboardEntry;
-use crate::open_in_external_app;
-use crate::save_to_tmp_file;
-use crate::copy_to_clipboard_by_gpaste_uuid;
+use gtk::{glib::markup_escape_text, prelude::*, Label, ListBoxRow, Widget};
 use std::io;
-use glib::markup_escape_text;
+
+use crate::{copy_to_clipboard_by_gpaste_uuid, open_in_external_app, save_to_tmp_file};
+
+use super::clipboard_entry::ClipboardEntry;
 
 #[derive(Debug, Clone)]
 pub struct ClipboardTextEntry {
@@ -69,11 +67,11 @@ impl ClipboardTextEntry {
         
         let mut result = String::new();
         let mut last_end = 0;
-        let mut found_match = false; // Track if we found any matches
+        let mut found_match = false; 
         
         let mut search_start = 0;
         while let Some(match_start) = text_lower[search_start..].find(&query_lower) {
-            found_match = true; // We found at least one match
+            found_match = true; 
             let absolute_start = search_start + match_start;
             let absolute_end = absolute_start + query.len();
             
@@ -90,7 +88,7 @@ impl ClipboardTextEntry {
         }
         
         if !found_match {
-            return None; // No matches found, return None
+            return None; 
         }
         
         if last_end < text.len() {
@@ -165,7 +163,10 @@ impl ClipboardEntry for ClipboardTextEntry {
         }
     }
 
-    fn copy_to_clipboard(&self) -> Result<(), io::Error> {
+    fn copy_to_clipboard(&self, copy_path: bool) -> Result<(), io::Error> {
+        if copy_path {
+            return Ok(());
+        }
         copy_to_clipboard_by_gpaste_uuid(&self.uuid)
     }
 
